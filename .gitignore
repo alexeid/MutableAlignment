@@ -27,3 +27,4 @@ release/*
 .classpath
 .project
 *.state
+target/
