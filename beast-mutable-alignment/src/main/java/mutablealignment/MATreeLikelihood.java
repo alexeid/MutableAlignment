@@ -6,7 +6,7 @@ import java.util.List;
 
 import beast.base.core.Description;
 import beast.base.evolution.datatype.DataType;
-import beast.base.evolution.likelihood.TreeLikelihood;
+import beast.base.spec.evolution.likelihood.TreeLikelihood;
 import beast.base.evolution.tree.Node;
 import beast.base.evolution.tree.Tree;
 import beast.base.evolution.tree.TreeInterface;
