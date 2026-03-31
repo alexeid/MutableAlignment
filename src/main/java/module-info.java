@@ -1,4 +1,4 @@
-open module beast.mutable.alignment {
+open module mutable.alignment {
     requires beast.base;
     requires beast.pkgmgmt;
     requires beagle;
