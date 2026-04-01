@@ -2,7 +2,7 @@ package test.mutablealignment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import beast.base.evolution.alignment.Alignment;
 import beast.base.evolution.alignment.Sequence;
@@ -90,10 +90,6 @@ public class MutableAlignmentTest {
 			int [] pattern1 = a.getPattern(i);
 			int [] pattern2 = b.getPattern(i);
 			for (int j = 0; j < pattern1.length; j++) {
-				if (pattern1[j] != pattern2[j]) {
-					int h = 3;
-					h++;
-				}
 				assertEquals(pattern1[j], pattern2[j]);
 			}
 			assertEquals(a.getPatternWeight(i), b.getPatternWeight(i));

@@ -46,14 +46,6 @@ public class MATreeLikelihood extends TreeLikelihood {
 			alignmentNeedsUpdate = false;
 		}
 		logP = super.calculateLogP();
-		
-		
-//		int [] states = new int[5];
-//		for (int i = 0; i < 5; i++) {
-//			likelihoodCore.getNodeStates(i, states);
-//			System.out.println(i + ": " + Arrays.toString(states));
-//		}
-		
 		return logP;
 	}
 	

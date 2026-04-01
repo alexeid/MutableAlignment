@@ -36,12 +36,6 @@ public class MutableAlignment extends Alignment implements MutableAlignmentInter
 	
 	@Override
 	public void initAndValidate() {
-		// sort sequences alphabetically
-		// TODO why are we doing this? What if the names are integers?
-		//Collections.sort(sequenceInput.get(), (o1,o2) -> {
-		//	return o1.taxonInput.get().compareTo(o2.taxonInput.get());
-		//});
-		
 		super.initAndValidate();
 	}
 	
