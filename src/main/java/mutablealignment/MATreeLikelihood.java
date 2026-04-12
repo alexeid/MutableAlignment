@@ -6,7 +6,7 @@ import java.util.List;
 
 import beast.base.core.Description;
 import beast.base.evolution.datatype.DataType;
-import beast.base.evolution.likelihood.TreeLikelihood;
+import beast.base.spec.evolution.likelihood.TreeLikelihood;
 import beast.base.evolution.tree.Node;
 import beast.base.evolution.tree.Tree;
 import beast.base.evolution.tree.TreeInterface;
@@ -46,14 +46,6 @@ public class MATreeLikelihood extends TreeLikelihood {
 			alignmentNeedsUpdate = false;
 		}
 		logP = super.calculateLogP();
-		
-		
-//		int [] states = new int[5];
-//		for (int i = 0; i < 5; i++) {
-//			likelihoodCore.getNodeStates(i, states);
-//			System.out.println(i + ": " + Arrays.toString(states));
-//		}
-		
 		return logP;
 	}
 	

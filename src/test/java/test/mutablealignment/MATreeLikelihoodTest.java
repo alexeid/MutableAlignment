@@ -2,8 +2,8 @@ package test.mutablealignment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import beast.base.evolution.alignment.Alignment;
 import beast.base.evolution.likelihood.TreeLikelihood;
@@ -15,15 +15,14 @@ import beast.base.evolution.tree.TreeParser;
 import beast.base.inference.State;
 import mutablealignment.MATreeLikelihood;
 import mutablealignment.MutableAlignment;
-import test.beast.BEASTTestCase;
-
 public class MATreeLikelihoodTest {
 
+	private static final double PRECISION = 1e-6;
 	private double logP1, logP2, logP3, logP4, logP5;
 	private Tree tree;
 	private SiteModel siteModel;
 	
-	@Before
+	@BeforeEach
 	public void SetUp() throws Exception {
         logP1 = calcLogP(MutableAlignmentTest.getAlignment1());
         logP2 = calcLogP(MutableAlignmentTest.getAlignment2());
@@ -72,7 +71,7 @@ public class MATreeLikelihoodTest {
         state.initialise();
 		state.setPosterior(likelihood);
         double logP = state.robustlyCalcPosterior(likelihood);
-        assertEquals(logP, logP1, BEASTTestCase.PRECISION);
+        assertEquals(logP, logP1, PRECISION);
         
         // make an edit of a single site
         state.store(1);
@@ -80,14 +79,14 @@ public class MATreeLikelihoodTest {
         a.setSiteValue(1, 1, 0);
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP2, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP2, logP, PRECISION);
         state.restore();
         state.restoreCalculationNodes();
 
         // restore/undo edit
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP1, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP1, logP, PRECISION);
         state.acceptCalculationNodes();
 
         // make multiple edits: a single site + taxon value edit 
@@ -97,14 +96,14 @@ public class MATreeLikelihoodTest {
 		a.setSiteValuesByTaxon(2, new int[] {3,2,1});
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP3, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP3, logP, PRECISION);
         state.restore();
         state.restoreCalculationNodes();
 
         // restore/undo edit
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP1, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP1, logP, PRECISION);
         state.acceptCalculationNodes();
 
 	
@@ -116,14 +115,14 @@ public class MATreeLikelihoodTest {
 		a.setSiteValuesBySite(0, new int[] {1,1,1,1,1,1});
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP4, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP4, logP, PRECISION);
         state.restore();
         state.restoreCalculationNodes();
 
         // restore/undo edit
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP1, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP1, logP, PRECISION);
         state.acceptCalculationNodes();
 
         // edit whole alignment
@@ -132,14 +131,14 @@ public class MATreeLikelihoodTest {
 		a.setSiteValues(new int[][]{{2,1,2,1,2,1},{1,2,1,2,1,2},{2,1,2,1,2,1}});
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP5, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP5, logP, PRECISION);
         state.restore();
         state.restoreCalculationNodes();
 
         // restore/undo edit
         state.checkCalculationNodesDirtiness();
         logP = likelihood.calculateLogP();
-        assertEquals(logP1, logP, BEASTTestCase.PRECISION);
+        assertEquals(logP1, logP, PRECISION);
         state.acceptCalculationNodes();
 	}
 }
