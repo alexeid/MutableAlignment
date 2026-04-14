@@ -1,7 +1,9 @@
 package mutablealignment;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import beagle.Beagle;
 import beast.base.core.Description;
@@ -18,6 +20,16 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	private int[] cachedOperations;
 	private int[] cachedStates;
 	private double[] cachedPartials;
+
+	// Tracks tip nodes whose states were transiently overwritten by
+	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
+	// them from the (post-store/restore) alignment.
+	private final Set<Integer> tempTipNodes = new HashSet<>();
+
+	// Tracks internal nodes whose partials buffer has already been flipped during
+	// the current proposal. Each node must be flipped at most once per proposal:
+	// flipping twice rotates back to the stored slot and overwrites it.
+	private final Set<Integer> flippedNodes = new HashSet<>();
 
 	@Override
 	public void initAndValidate() {
@@ -120,16 +132,18 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
                 cachedStates[i] = code; // Causes ambiguous states to be ignored.
         }
         beagle.setTipStates(nodeNr, cachedStates);
+        tempTipNodes.add(nodeNr);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
 
 	/*
-	 * returns pattern log likelihoods after setting sequence for node with given nodeNr 
+	 * returns pattern log likelihoods after setting sequence for node with given nodeNr
 	 * to states encoded in sites
 	 */
 	public double [] getLogProbsForPartialsSequence(int nodeNr, double [] tipLikelihoods) {
         beagle.setPartials(nodeNr, tipLikelihoods);
+        tempTipNodes.add(nodeNr);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
@@ -154,6 +168,11 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
             int x = operationCount * Beagle.OPERATION_TUPLE_SIZE;
 
+            // Flip to scratch slot so we don't overwrite partials captured by store().
+            // Flip at most once per node per proposal (toggling twice would clobber the stored slot).
+            if (flippedNodes.add(nodeNr)) {
+                partialBufferHelper.flipOffset(nodeNr);
+            }
             operations[x] = partialBufferHelper.getOffsetIndex(nodeNr);
 
             if (useScaleFactors) {
@@ -325,21 +344,36 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	@Override
 	public void store() {
     	dirtySequences.clear();
+    	tempTipNodes.clear();
+    	flippedNodes.clear();
 
     	super.store();
 	}
-	
+
 	@Override
 	public void restore() {
 		super.restore();
-		
+
+    	// Resync every tip we temporarily mutated (via getLogProbs*Sequence) from
+    	// the alignment, which has itself just been rolled back. This is a superset
+    	// of alignment.getDirtySequenceIndices() because getLogProbs* may probe tips
+    	// that weren't alignment-dirty (e.g. the partials-fixup leaf).
+    	dirtySequences.clear();
+    	dirtySequences.addAll(tempTipNodes);
+    	for (Integer i : alignment.getDirtySequenceIndices()) {
+    		dirtySequences.add(i);
+    	}
     	updateTipData();
     	dirtySequences.clear();
+    	tempTipNodes.clear();
+    	flippedNodes.clear();
 	}
-	
+
 	@Override
 	protected void accept() {
     	dirtySequences.clear();
+    	tempTipNodes.clear();
+    	flippedNodes.clear();
 		alignment.accept();
 		super.accept();
 	}
