@@ -55,6 +55,16 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 			updateAlignment();
 			alignmentNeedsUpdate = false;
 		}
+		// Undo probe-time partials-buffer flips before super.calculateLogP() runs.
+		// Reason: BeagleTreeLikelihood's traverse() calls partialBufferHelper.flipOffset()
+		// for every dirty ancestor, which toggles the partials offset again. Without
+		// this undo, ancestors flipped by getLogProbs*Sequence get flipped twice in
+		// one proposal, rotating the current offset back to the stored slot and
+		// clobbering it.
+		for (Integer n : flippedNodes) {
+			partialBufferHelper.flipOffset(n);
+		}
+		flippedNodes.clear();
 		logP = super.calculateLogP();
 		
 		

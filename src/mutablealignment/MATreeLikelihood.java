@@ -57,6 +57,15 @@ public class MATreeLikelihood extends TreeLikelihood {
 			updateAlignment();
 			alignmentNeedsUpdate = false;
 		}
+		// Undo probe-time partials toggles before super.calculateLogP() runs.
+		// Reason: traverse() calls setNodePartialsForUpdate() for every dirty
+		// ancestor, which toggles the partials-index again. Without this undo,
+		// ancestors toggled by getLogProbs*Sequence get toggled twice in one
+		// proposal, rotating current back to the stored slot and clobbering it.
+		for (Integer n : flippedNodes) {
+			likelihoodCore.setNodePartialsForUpdate(n);
+		}
+		flippedNodes.clear();
 		logP = super.calculateLogP();
 		
 		
