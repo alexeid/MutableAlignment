@@ -71,7 +71,7 @@ sequenceDiagram
     Note over LC: partials[0]=A, partials[1]=probe<br/>c=1, s=0
 
     rect rgb(255, 200, 200)
-    MCMC->>MA: store() 💥 clears flippedNodes
+    MCMC->>MA: store clears flippedNodes (BUG)
     end
 
     MCMC->>MA: calculateLogP()
@@ -80,8 +80,8 @@ sequenceDiagram
 
     Note over LC: partials[0]=B (overwrote A!), partials[1]=probe<br/>c=0, s=0
 
-    MCMC->>LC: restore() swaps c↔s (no-op)
-    Note over LC: 💥 partials[0] is corrupt; next read returns B not A
+    MCMC->>LC: restore swaps c and s
+    Note over LC: partials[0] is corrupt; next read returns B not A
 ```
 
 ## Fixed flow (commit `af09f09`)
