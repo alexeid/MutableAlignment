@@ -1,7 +1,9 @@
 package mutablealignment;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import beagle.Beagle;
 import beast.base.core.Description;
@@ -12,12 +14,18 @@ import beast.base.evolution.tree.TreeInterface;
 
 @Description("Tree likelihood that can efficiently recalculate changes in a mutable alignment")
 public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
-	
+
 	private MutableAlignment alignment;
 	private boolean alignmentNeedsUpdate;
 	private int[] cachedOperations;
 	private int[] cachedStates;
 	private double[] cachedPartials;
+
+	// Tracks tip nodes whose states were transiently overwritten by
+	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
+	// them from the (post-store/restore) alignment. BEAGLE's tip states are
+	// not double-buffered, so this resync mechanism is unavoidable.
+	private final Set<Integer> tempTipNodes = new HashSet<>();
 
 	@Override
 	public void initAndValidate() {
@@ -120,25 +128,37 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
                 cachedStates[i] = code; // Causes ambiguous states to be ignored.
         }
         beagle.setTipStates(nodeNr, cachedStates);
+        tempTipNodes.add(nodeNr);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
 
 	/*
-	 * returns pattern log likelihoods after setting sequence for node with given nodeNr 
+	 * returns pattern log likelihoods after setting sequence for node with given nodeNr
 	 * to states encoded in sites
 	 */
 	public double [] getLogProbsForPartialsSequence(int nodeNr, double [] tipLikelihoods) {
         beagle.setPartials(nodeNr, tipLikelihoods);
+        tempTipNodes.add(nodeNr);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
 
 	
-	// propagate changes from a leaf node set by getLogProbsForStateSequence or 
-	// getLogProbsForPartialsSequence to the root and return updated pattern log 
-	// likelihoods
+	// propagate changes from a leaf node set by getLogProbsForStateSequence or
+	// getLogProbsForPartialsSequence to the root and return updated pattern log
+	// likelihoods. Hermetic: flips each touched ancestor's partials offset to
+	// the scratch slot before writing, computes pattern log likelihoods at the
+	// root, then flips each ancestor back. After this method returns the
+	// partialBufferHelper offsets are exactly what they were on entry.
 	private double [] calcPatternLogLikelihoods(int nodeNr) {
+		return calcPatternLogLikelihoods(nodeNr, new HashSet<>());
+	}
+
+	// Inner overload threads the per-call `flipped` set through the rescale
+	// recursion so we still flip each ancestor at most once across attempts
+	// (and flip them all back on the final success path).
+	private double [] calcPatternLogLikelihoods(int nodeNr, Set<Integer> flipped) {
 
         Node node = treeInput.get().getNode(nodeNr);
         int operationCount = 0;
@@ -154,6 +174,11 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
             int x = operationCount * Beagle.OPERATION_TUPLE_SIZE;
 
+            // Flip to scratch slot so we don't overwrite partials captured by store().
+            // Flip at most once per node per proposal (toggling twice would clobber the stored slot).
+            if (flipped.add(nodeNr)) {
+                partialBufferHelper.flipOffset(nodeNr);
+            }
             operations[x] = partialBufferHelper.getOffsetIndex(nodeNr);
 
             if (useScaleFactors) {
@@ -303,7 +328,9 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
                     // traverse again but without flipping partials indices as we
                     // just want to overwrite the last attempt. We will flip the
                     // scale buffer indices though as we are recomputing them.
-                    return calcPatternLogLikelihoods(nodeNr);
+                    // Pass `flipped` so the recursion's add() check skips
+                    // re-flipping the ancestors we already toggled.
+                    return calcPatternLogLikelihoods(nodeNr, flipped);
 
 //                    done = false; // Run through do-while loop again
 //                    firstRescaleAttempt = false; // Only try to rescale once
@@ -318,6 +345,11 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
         } while (!done);
 
+        // flip ancestors back so the partials offsets are unchanged on exit
+        for (Integer nr : flipped) {
+            partialBufferHelper.flipOffset(nr);
+        }
+
         return patternLogLikelihoods.clone();
     }
 
@@ -325,21 +357,37 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	@Override
 	public void store() {
     	dirtySequences.clear();
+    	// Do NOT clear tempTipNodes here. store() is called by MCMC between
+    	// operator.proposal() and calculateLogP() (default
+    	// requiresStateInitialisation=true). Tip-state probes happen during
+    	// proposal, and the resync needs to know which tips were touched until
+    	// restore()/accept() handles them.
 
     	super.store();
 	}
-	
+
 	@Override
 	public void restore() {
 		super.restore();
-		
+
+    	// Resync every tip we temporarily mutated (via getLogProbs*Sequence) from
+    	// the alignment, which has itself just been rolled back. This is a superset
+    	// of alignment.getDirtySequenceIndices() because getLogProbs* may probe tips
+    	// that weren't alignment-dirty.
+    	dirtySequences.clear();
+    	dirtySequences.addAll(tempTipNodes);
+    	for (Integer i : alignment.getDirtySequenceIndices()) {
+    		dirtySequences.add(i);
+    	}
     	updateTipData();
     	dirtySequences.clear();
+    	tempTipNodes.clear();
 	}
-	
+
 	@Override
 	protected void accept() {
     	dirtySequences.clear();
+    	tempTipNodes.clear();
 		alignment.accept();
 		super.accept();
 	}
