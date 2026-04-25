@@ -1,12 +1,18 @@
 # Probe APIs and the store/restore lifecycle
 
-`MATreeLikelihood.getLogProbsForStateSequence` (and its partials variant) is
-used by Gibbs-style operators to ask "what would the per-site log
-likelihoods be if taxon `k`'s sequence were `s`?" without committing to the
-proposed sequence. The probe walks from `k` up to the root, recomputing
-partials at every ancestor — which writes into BEAST2's `LikelihoodCore`
-buffers. This document explains how those writes interact with BEAST2's
-store/restore lifecycle and why the obvious-looking fix has subtle traps.
+In this document, **probe** means a speculative call to
+`MATreeLikelihood.getLogProbsForStateSequence(nodeNr, sites)` (or its
+partials variant `getLogProbsForPartialsSequence`): the caller is asking
+*what would the per-site log likelihoods be if leaf `nodeNr` had this
+sequence?* without committing to it as the new state. Gibbs-style
+operators issue many such probes per proposal to build up their proposal
+distribution.
+
+The probe walks from `nodeNr` up to the root, recomputing partials at
+every ancestor — which writes into BEAST2's `LikelihoodCore` buffers.
+That side effect is the source of all the subtleties below: it has to be
+managed against BEAST2's store/restore lifecycle so that the cached
+partials representing the current accepted state survive untouched.
 
 ## The buffer model
 
