@@ -81,7 +81,7 @@ sequenceDiagram
     Note over LC: partials[0]=B (overwrote A!), partials[1]=probe<br/>c=0, s=0
 
     MCMC->>LC: restore swaps c and s
-    Note over LC: partials[0] is corrupt; next read returns B not A
+    Note over LC: partials[0] holds the corrupt value B instead of A
 ```
 
 ## Fixed flow (commit `af09f09`)
