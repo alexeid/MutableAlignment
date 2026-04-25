@@ -362,8 +362,12 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	@Override
 	public void store() {
     	dirtySequences.clear();
-    	tempTipNodes.clear();
-    	flippedNodes.clear();
+    	// Do NOT clear tempTipNodes / flippedNodes here. store() is called by MCMC
+    	// between operator.proposal() and calculateLogP() (default
+    	// requiresStateInitialisation=true). Probes happen during proposal, so
+    	// clearing here would lose the tracking needed to undo probe-time buffer
+    	// flips before super.calculateLogP() runs. Both sets are cleared by
+    	// calculateLogP() (after the undo) and by accept()/restore().
 
     	super.store();
 	}
