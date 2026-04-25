@@ -23,13 +23,9 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
 	// Tracks tip nodes whose states were transiently overwritten by
 	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
-	// them from the (post-store/restore) alignment.
+	// them from the (post-store/restore) alignment. BEAGLE's tip states are
+	// not double-buffered, so this resync mechanism is unavoidable.
 	private final Set<Integer> tempTipNodes = new HashSet<>();
-
-	// Tracks internal nodes whose partials buffer has already been flipped during
-	// the current proposal. Each node must be flipped at most once per proposal:
-	// flipping twice rotates back to the stored slot and overwrites it.
-	private final Set<Integer> flippedNodes = new HashSet<>();
 
 	@Override
 	public void initAndValidate() {
@@ -55,16 +51,6 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 			updateAlignment();
 			alignmentNeedsUpdate = false;
 		}
-		// Undo probe-time partials-buffer flips before super.calculateLogP() runs.
-		// Reason: BeagleTreeLikelihood's traverse() calls partialBufferHelper.flipOffset()
-		// for every dirty ancestor, which toggles the partials offset again. Without
-		// this undo, ancestors flipped by getLogProbs*Sequence get flipped twice in
-		// one proposal, rotating the current offset back to the stored slot and
-		// clobbering it.
-		for (Integer n : flippedNodes) {
-			partialBufferHelper.flipOffset(n);
-		}
-		flippedNodes.clear();
 		logP = super.calculateLogP();
 		
 		
@@ -167,10 +153,20 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	}
 
 	
-	// propagate changes from a leaf node set by getLogProbsForStateSequence or 
-	// getLogProbsForPartialsSequence to the root and return updated pattern log 
-	// likelihoods
+	// propagate changes from a leaf node set by getLogProbsForStateSequence or
+	// getLogProbsForPartialsSequence to the root and return updated pattern log
+	// likelihoods. Hermetic: flips each touched ancestor's partials offset to
+	// the scratch slot before writing, computes pattern log likelihoods at the
+	// root, then flips each ancestor back. After this method returns the
+	// partialBufferHelper offsets are exactly what they were on entry.
 	private double [] calcPatternLogLikelihoods(int nodeNr) {
+		return calcPatternLogLikelihoods(nodeNr, new HashSet<>());
+	}
+
+	// Inner overload threads the per-call `flipped` set through the rescale
+	// recursion so we still flip each ancestor at most once across attempts
+	// (and flip them all back on the final success path).
+	private double [] calcPatternLogLikelihoods(int nodeNr, Set<Integer> flipped) {
 
         Node node = treeInput.get().getNode(nodeNr);
         int operationCount = 0;
@@ -188,7 +184,7 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
             // Flip to scratch slot so we don't overwrite partials captured by store().
             // Flip at most once per node per proposal (toggling twice would clobber the stored slot).
-            if (flippedNodes.add(nodeNr)) {
+            if (flipped.add(nodeNr)) {
                 partialBufferHelper.flipOffset(nodeNr);
             }
             operations[x] = partialBufferHelper.getOffsetIndex(nodeNr);
@@ -340,7 +336,9 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
                     // traverse again but without flipping partials indices as we
                     // just want to overwrite the last attempt. We will flip the
                     // scale buffer indices though as we are recomputing them.
-                    return calcPatternLogLikelihoods(nodeNr);
+                    // Pass `flipped` so the recursion's add() check skips
+                    // re-flipping the ancestors we already toggled.
+                    return calcPatternLogLikelihoods(nodeNr, flipped);
 
 //                    done = false; // Run through do-while loop again
 //                    firstRescaleAttempt = false; // Only try to rescale once
@@ -355,6 +353,11 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 
         } while (!done);
 
+        // flip ancestors back so the partials offsets are unchanged on exit
+        for (Integer nr : flipped) {
+            partialBufferHelper.flipOffset(nr);
+        }
+
         return patternLogLikelihoods.clone();
     }
 
@@ -362,12 +365,11 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	@Override
 	public void store() {
     	dirtySequences.clear();
-    	// Do NOT clear tempTipNodes / flippedNodes here. store() is called by MCMC
-    	// between operator.proposal() and calculateLogP() (default
-    	// requiresStateInitialisation=true). Probes happen during proposal, so
-    	// clearing here would lose the tracking needed to undo probe-time buffer
-    	// flips before super.calculateLogP() runs. Both sets are cleared by
-    	// calculateLogP() (after the undo) and by accept()/restore().
+    	// Do NOT clear tempTipNodes here. store() is called by MCMC between
+    	// operator.proposal() and calculateLogP() (default
+    	// requiresStateInitialisation=true). Tip-state probes happen during
+    	// proposal, and the resync needs to know which tips were touched until
+    	// restore()/accept() handles them.
 
     	super.store();
 	}
@@ -388,14 +390,12 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
     	updateTipData();
     	dirtySequences.clear();
     	tempTipNodes.clear();
-    	flippedNodes.clear();
 	}
 
 	@Override
 	protected void accept() {
     	dirtySequences.clear();
     	tempTipNodes.clear();
-    	flippedNodes.clear();
 		alignment.accept();
 		super.accept();
 	}

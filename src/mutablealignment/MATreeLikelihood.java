@@ -23,13 +23,10 @@ public class MATreeLikelihood extends TreeLikelihood {
 
 	// Tracks tip nodes whose states were transiently overwritten by
 	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
-	// them from the (post-store/restore) alignment.
+	// them from the (post-store/restore) alignment. Tip states are
+	// single-buffered in BeerLikelihoodCore -- there is no flip-back trick
+	// available -- so this resync mechanism is unavoidable.
 	private final Set<Integer> tempTipNodes = new HashSet<>();
-
-	// Tracks internal nodes whose partials buffer has already been flipped during
-	// the current proposal. Each node must be flipped at most once per proposal:
-	// flipping twice rotates back to the stored slot and overwrites it.
-	private final Set<Integer> flippedNodes = new HashSet<>();
 
 	@Override
 	public void initAndValidate() {
@@ -57,15 +54,6 @@ public class MATreeLikelihood extends TreeLikelihood {
 			updateAlignment();
 			alignmentNeedsUpdate = false;
 		}
-		// Undo probe-time partials toggles before super.calculateLogP() runs.
-		// Reason: traverse() calls setNodePartialsForUpdate() for every dirty
-		// ancestor, which toggles the partials-index again. Without this undo,
-		// ancestors toggled by getLogProbs*Sequence get toggled twice in one
-		// proposal, rotating current back to the stored slot and clobbering it.
-		for (Integer n : flippedNodes) {
-			likelihoodCore.setNodePartialsForUpdate(n);
-		}
-		flippedNodes.clear();
 		logP = super.calculateLogP();
 		
 		
@@ -168,23 +156,26 @@ public class MATreeLikelihood extends TreeLikelihood {
 	}
 
 	
-	// propagate changes from a leaf node set by getLogProbsForStateSequence or 
-	// getLogProbsForPartialsSequence to the root and return updated pattern log 
-	// likelihoods
+	// propagate changes from a leaf node set by getLogProbsForStateSequence or
+	// getLogProbsForPartialsSequence to the root and return updated pattern log
+	// likelihoods. Hermetic: flips each touched ancestor's partials index to
+	// the scratch slot before writing, computes pattern log likelihoods at the
+	// root, then flips each ancestor back. After this method returns the
+	// likelihoodCore's partials indices are exactly what they were on entry,
+	// so the probe leaves no trace for the framework's store/restore to mishandle.
 	private double [] calcPatternLogLikelihoods(int nodeNr) {
-        // calculate partials up to the root
+        // calculate partials up to the root, flipping each ancestor to its
+        // scratch slot so we don't overwrite the stored state
+        final List<Integer> flipped = new ArrayList<>();
         Node node = treeInput.get().getNode(nodeNr);
         do {
         	node = node.getParent();
         	final int parentNr = node.getNr();
-        	// Flip to scratch buffer so we don't overwrite partials captured by store().
-        	// Flip at most once per node per proposal (toggling twice would clobber the stored slot).
-        	if (flippedNodes.add(parentNr)) {
-        		likelihoodCore.setNodePartialsForUpdate(parentNr);
-        	}
+        	likelihoodCore.setNodePartialsForUpdate(parentNr);
+        	flipped.add(parentNr);
             likelihoodCore.calculatePartials(node.getLeft().getNr(), node.getRight().getNr(), parentNr);
         } while (!node.isRoot());
-        
+
         // do fiddly bits at the root
         final double[] proportions = m_siteModel.getCategoryProportions(node);
         likelihoodCore.integratePartials(node.getNr(), proportions, m_fRootPartials);
@@ -204,6 +195,11 @@ public class MATreeLikelihood extends TreeLikelihood {
         }
         likelihoodCore.calculateLogLikelihoods(m_fRootPartials, rootFrequencies, patternLogLikelihoods);
 
+        // flip ancestors back so the partials indices are unchanged on exit
+        for (Integer nr : flipped) {
+        	likelihoodCore.setNodePartialsForUpdate(nr);
+        }
+
 		return getPatternLogLikelihoods();
 	}
 	
@@ -211,12 +207,11 @@ public class MATreeLikelihood extends TreeLikelihood {
 	@Override
 	public void store() {
     	dirtySequences.clear();
-    	// Do NOT clear tempTipNodes / flippedNodes here. store() is called by MCMC
-    	// between operator.proposal() and calculateLogP() (default
-    	// requiresStateInitialisation=true). Probes happen during proposal, so
-    	// clearing here would lose the tracking needed to undo probe-time buffer
-    	// flips before super.calculateLogP() runs. Both sets are cleared by
-    	// calculateLogP() (after the undo) and by accept()/restore().
+    	// Do NOT clear tempTipNodes here. store() is called by MCMC between
+    	// operator.proposal() and calculateLogP() (default
+    	// requiresStateInitialisation=true). Tip-state probes happen during
+    	// proposal, and the resync needs to know which tips were touched until
+    	// restore()/accept() handles them.
 
     	super.store();
 	}
@@ -237,14 +232,12 @@ public class MATreeLikelihood extends TreeLikelihood {
     	updateTipData();
     	dirtySequences.clear();
     	tempTipNodes.clear();
-    	flippedNodes.clear();
 	}
 
 	@Override
 	protected void accept() {
     	dirtySequences.clear();
     	tempTipNodes.clear();
-    	flippedNodes.clear();
 		alignment.accept();
 		super.accept();
 	}
