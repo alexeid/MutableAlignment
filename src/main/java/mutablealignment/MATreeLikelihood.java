@@ -19,6 +19,12 @@ public class MATreeLikelihood extends TreeLikelihood {
 	private int[] cachedStates;
 	private double[] cachedPartials;
 
+	// Mapping from alignment column index to tree leaf node number, and
+	// inverse. Computed once in initAndValidate by taxon name; alignment
+	// column order and tree leaf order are independent.
+	private int[] alignmentIdxToTreeNodeNr;
+	private int[] treeNodeNrToAlignmentIdx;
+
 	@Override
 	public void initAndValidate() {
 		if (!(dataInput.get() instanceof MutableAlignment)) {
@@ -37,6 +43,24 @@ public class MATreeLikelihood extends TreeLikelihood {
 		int stateCount = alignment.getDataType().getStateCount();
 		cachedStates = new int[patternCount];
 		cachedPartials = new double[patternCount * stateCount];
+
+		buildTaxonIndexMaps();
+	}
+
+	private void buildTaxonIndexMaps() {
+		int taxonCount = alignment.getTaxonCount();
+		alignmentIdxToTreeNodeNr = new int[taxonCount];
+		treeNodeNrToAlignmentIdx = new int[taxonCount];
+		TreeInterface tree = treeInput.get();
+		for (Node leaf : tree.getExternalNodes()) {
+			int nodeNr = leaf.getNr();
+			int alignIdx = alignment.getTaxonIndex(leaf.getID());
+			if (alignIdx < 0) {
+				throw new RuntimeException("Tree leaf " + leaf.getID() + " not found in alignment");
+			}
+			alignmentIdxToTreeNodeNr[alignIdx] = nodeNr;
+			treeNodeNrToAlignmentIdx[nodeNr] = alignIdx;
+		}
 	}
 		
 	@Override
@@ -64,9 +88,10 @@ public class MATreeLikelihood extends TreeLikelihood {
         TreeInterface tree = treeInput.get();
     	int patternCount = alignment.getPatternCount();
         int stateCount = alignment.getDataType().getStateCount();
-    	for (int nodeNr: dirtySequences) {
+    	for (int taxonIndex: dirtySequences) {
+    		// dirtySequences holds alignment column indices.
+    		int nodeNr = alignmentIdxToTreeNodeNr[taxonIndex];
     		Node node = tree.getNode(nodeNr);
-            int taxonIndex = alignment.getTaxonIndex(node.getID());
 
             if (m_useAmbiguities.get()) {
 	            int k = 0;
