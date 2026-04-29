@@ -404,15 +404,14 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	public void restore() {
 		super.restore();
 
-    	// Resync every tip we temporarily mutated (via getLogProbs*Sequence) from
-    	// the alignment, which has itself just been rolled back. This is a superset
-    	// of alignment.getDirtySequenceIndices() because getLogProbs* may probe tips
-    	// that weren't alignment-dirty (e.g. the partials-fixup leaf).
-    	dirtySequences.clear();
+    	// Resync every tip we temporarily mutated from the (now-rolled-back)
+    	// alignment. dirtySequences was populated during the previous
+    	// calculateLogP from alignment.getDirtySequenceIndices(); we can't
+    	// re-query that here because alignment.restore() has already cleared
+    	// the edit list. Add probe-touched tips (tempTipNodes) since they may
+    	// not have been alignment-dirty (e.g. ExchangeGibbsOperator's partials-
+    	// fixup leaf).
     	dirtySequences.addAll(tempTipNodes);
-    	for (Integer i : alignment.getDirtySequenceIndices()) {
-    		dirtySequences.add(i);
-    	}
     	updateTipData();
     	dirtySequences.clear();
     	tempTipNodes.clear();
