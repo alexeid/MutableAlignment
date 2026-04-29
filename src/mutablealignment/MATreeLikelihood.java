@@ -21,11 +21,18 @@ public class MATreeLikelihood extends TreeLikelihood {
 	private int[] cachedStates;
 	private double[] cachedPartials;
 
+	// Mapping from alignment column index to tree leaf node number, and
+	// inverse. Computed once in initAndValidate by taxon name; alignment
+	// column order and tree leaf order are independent.
+	private int[] alignmentIdxToTreeNodeNr;
+	private int[] treeNodeNrToAlignmentIdx;
+
 	// Tracks tip nodes whose states were transiently overwritten by
 	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
 	// them from the (post-store/restore) alignment. Tip states are
 	// single-buffered in BeerLikelihoodCore -- there is no flip-back trick
 	// available -- so this resync mechanism is unavoidable.
+	// Stored as alignment column indices, matching dirtySequences.
 	private final Set<Integer> tempTipNodes = new HashSet<>();
 
 	@Override
@@ -46,6 +53,24 @@ public class MATreeLikelihood extends TreeLikelihood {
 		int stateCount = alignment.getDataType().getStateCount();
 		cachedStates = new int[patternCount];
 		cachedPartials = new double[patternCount * stateCount];
+
+		buildTaxonIndexMaps();
+	}
+
+	private void buildTaxonIndexMaps() {
+		int taxonCount = alignment.getTaxonCount();
+		alignmentIdxToTreeNodeNr = new int[taxonCount];
+		treeNodeNrToAlignmentIdx = new int[taxonCount];
+		TreeInterface tree = treeInput.get();
+		for (Node leaf : tree.getExternalNodes()) {
+			int nodeNr = leaf.getNr();
+			int alignIdx = alignment.getTaxonIndex(leaf.getID());
+			if (alignIdx < 0) {
+				throw new RuntimeException("Tree leaf " + leaf.getID() + " not found in alignment");
+			}
+			alignmentIdxToTreeNodeNr[alignIdx] = nodeNr;
+			treeNodeNrToAlignmentIdx[nodeNr] = alignIdx;
+		}
 	}
 		
 	@Override
@@ -81,9 +106,10 @@ public class MATreeLikelihood extends TreeLikelihood {
         TreeInterface tree = treeInput.get();
     	int patternCount = alignment.getPatternCount();
         int stateCount = alignment.getDataType().getStateCount();
-    	for (int nodeNr: dirtySequences) {
+    	for (int taxonIndex: dirtySequences) {
+    		// dirtySequences holds alignment column indices.
+    		int nodeNr = alignmentIdxToTreeNodeNr[taxonIndex];
     		Node node = tree.getNode(nodeNr);
-            int taxonIndex = alignment.getTaxonIndex(node.getID());
 
             if (m_useAmbiguities.get()) {
 	            int k = 0;
@@ -139,7 +165,7 @@ public class MATreeLikelihood extends TreeLikelihood {
                 cachedStates[i] = code; // Causes ambiguous states to be ignored.
         }
         likelihoodCore.setNodeStates(nodeNr, cachedStates);
-        tempTipNodes.add(nodeNr);
+        tempTipNodes.add(treeNodeNrToAlignmentIdx[nodeNr]);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
@@ -150,7 +176,7 @@ public class MATreeLikelihood extends TreeLikelihood {
 	 */
 	public double [] getLogProbsForPartialsSequence(int nodeNr, double [] tipLikelihoods) {
         likelihoodCore.setNodePartials(nodeNr, tipLikelihoods);
-        tempTipNodes.add(nodeNr);
+        tempTipNodes.add(treeNodeNrToAlignmentIdx[nodeNr]);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}

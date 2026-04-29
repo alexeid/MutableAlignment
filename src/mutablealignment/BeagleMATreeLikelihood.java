@@ -21,10 +21,17 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	private int[] cachedStates;
 	private double[] cachedPartials;
 
+	// Mapping from alignment column index to tree leaf node number, and
+	// inverse. Computed once in initAndValidate by taxon name; alignment
+	// column order and tree leaf order are independent.
+	private int[] alignmentIdxToTreeNodeNr;
+	private int[] treeNodeNrToAlignmentIdx;
+
 	// Tracks tip nodes whose states were transiently overwritten by
 	// getLogProbs*Sequence during a proposal, so restore()/accept() can re-sync
 	// them from the (post-store/restore) alignment. BEAGLE's tip states are
 	// not double-buffered, so this resync mechanism is unavoidable.
+	// Stored as alignment column indices, matching dirtySequences.
 	private final Set<Integer> tempTipNodes = new HashSet<>();
 
 	@Override
@@ -43,6 +50,24 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 		cachedStates = new int[patternCount];
 		cachedPartials = new double[patternCount * stateCount];
 		cachedOperations = new int[treeInput.get().getNodeCount() * Beagle.OPERATION_TUPLE_SIZE];
+
+		buildTaxonIndexMaps();
+	}
+
+	private void buildTaxonIndexMaps() {
+		int taxonCount = alignment.getTaxonCount();
+		alignmentIdxToTreeNodeNr = new int[taxonCount];
+		treeNodeNrToAlignmentIdx = new int[taxonCount];
+		TreeInterface tree = treeInput.get();
+		for (Node leaf : tree.getExternalNodes()) {
+			int nodeNr = leaf.getNr();
+			int alignIdx = alignment.getTaxonIndex(leaf.getID());
+			if (alignIdx < 0) {
+				throw new RuntimeException("Tree leaf " + leaf.getID() + " not found in alignment");
+			}
+			alignmentIdxToTreeNodeNr[alignIdx] = nodeNr;
+			treeNodeNrToAlignmentIdx[nodeNr] = alignIdx;
+		}
 	}
 		
 	@Override
@@ -78,9 +103,10 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
         TreeInterface tree = treeInput.get();
     	int patternCount = alignment.getPatternCount();
         int stateCount = alignment.getDataType().getStateCount();
-    	for (int nodeNr: dirtySequences) {
+    	for (int taxonIndex: dirtySequences) {
+    		// dirtySequences holds alignment column indices.
+    		int nodeNr = alignmentIdxToTreeNodeNr[taxonIndex];
     		Node node = tree.getNode(nodeNr);
-            int taxonIndex = alignment.getTaxonIndex(node.getID());
 
             if (m_useAmbiguities.get()) {
 	            int k = 0;
@@ -136,7 +162,7 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
                 cachedStates[i] = code; // Causes ambiguous states to be ignored.
         }
         beagle.setTipStates(nodeNr, cachedStates);
-        tempTipNodes.add(nodeNr);
+        tempTipNodes.add(treeNodeNrToAlignmentIdx[nodeNr]);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
@@ -147,7 +173,7 @@ public class BeagleMATreeLikelihood extends BeagleTreeLikelihood {
 	 */
 	public double [] getLogProbsForPartialsSequence(int nodeNr, double [] tipLikelihoods) {
         beagle.setPartials(nodeNr, tipLikelihoods);
-        tempTipNodes.add(nodeNr);
+        tempTipNodes.add(treeNodeNrToAlignmentIdx[nodeNr]);
 
         return calcPatternLogLikelihoods(nodeNr);
 	}
