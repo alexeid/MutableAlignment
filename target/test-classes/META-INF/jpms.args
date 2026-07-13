@@ -1,0 +1,4 @@
+--patch-module
+mutable.alignment=_
+--add-reads
+mutable.alignment=ALL-UNNAMED

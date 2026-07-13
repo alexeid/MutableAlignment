@@ -27,3 +27,15 @@ release/*
 .classpath
 .project
 *.state
+
+# --- added during laptop migration 2026 ---
+.DS_Store
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.Rhistory
+.Rapp.history
+_site/
+.pytest_cache/

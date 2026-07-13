@@ -1,0 +1,4 @@
+--patch-module
+beast.mutable.alignment=_
+--add-reads
+beast.mutable.alignment=ALL-UNNAMED
